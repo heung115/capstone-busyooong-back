@@ -15,3 +15,16 @@ pip install fastapi
 ```bash
 pip install uvicorn
 ```
+
+```bash
+pip install supabase
+pip install supabase-py
+```
+
+의존성 고치는게 귀찮으면
+
+```bash
+pip install -r requirements.txt
+```
+
+로 한번에 설치 가능합니다.
