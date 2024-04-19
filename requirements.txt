@@ -27,7 +27,6 @@ iniconfig==2.0.0
 packaging==24.0
 pluggy==1.4.0
 postgrest==0.16.3
-postgrest-py==0.4.0
 proto-plus==1.23.0
 protobuf==4.25.3
 py==1.11.0
