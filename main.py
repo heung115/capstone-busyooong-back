@@ -1,32 +1,33 @@
+import uvicorn
 from fastapi import FastAPI
-import os
-
 from supabase import create_client, Client
-from dotenv import load_dotenv
-
-from gemini.single_turn import generate_response
+from single_turn import generate_response
+from single_turn import update_prompt
+from pydantic import BaseModel
+from find import findBus
 from env import getEnv
 
 # 환경변수
 app = FastAPI()
 
-url: str = getEnv("SUPABASE_URL")
-key: str = getEnv("SUPABASE_KEY")
-supabase: Client = create_client(url, key)
+
+@app.get("/get-destination/{string}")
+async def read_goal(string: str = ""):
+    result = generate_response(string)
+    return {"result": result}
 
 
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
+class GetBusResultRequest(BaseModel):
+    userLati: float
+    userLong: float
+    userOrigin: str
+    userDestination: str
+
+@app.post("/get-bus-result")
+async def get_bus_result(item: GetBusResultRequest):
+    update_prompt(item.userOrigin, item.userDestination)
+    return findBus(item.userLati, item.userLong, item.userDestination)
 
 
-@app.get("/nodes")
-async def read_items():
-    data = supabase.table("nodes").select("NODE_NM").execute()
-    return data.data
-
-
-@app.get("/gimini")
-async def read_goal(input: str = ""):
-    result = generate_response(input)
-    return result
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port = 8000)

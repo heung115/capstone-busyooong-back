@@ -32,9 +32,7 @@ model = genai.GenerativeModel(
     safety_settings=safety_settings,
 )
 
-
-def generate_response(user_input):
-    prompt_parts = [
+origin_prompt_parts = [
         "input: 주공아파트요",
         "output: 주공아파트",
         "input: 그 어디였더라 저기 광교에 있는 경기도청까지 어떻게 가요",
@@ -45,7 +43,13 @@ def generate_response(user_input):
         "output: 아이파크 캐슬 2단지",
         "input: 저기 뭐더라 제가 청계마을까지 가야하거든요",
         "output: 청계마을",
-        "input: " + user_input,
     ]
+def generate_response(user_input):
+    prompt_parts = origin_prompt_parts[::]
+    prompt_parts.append("input: " + user_input)
     response = model.generate_content(prompt_parts)
     return response.text
+
+def update_prompt(_input, _output):
+    origin_prompt_parts.append("input: " + _input)
+    origin_prompt_parts.append("output: " + _output)
