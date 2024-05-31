@@ -79,6 +79,7 @@ def coordinateCheckResult(requestResult, successCount, pointLati, pointLong):
             # newResultBusStop = requestResult.get("items").get("item").get("nodenm")
             newResultBusStop = [requestResult.get("items").get("item").get("nodenm"),
                                 requestResult.get("items").get("item").get("nodeid"),
+                                requestResult.get('items').get("item").get('nodeno'),
                                 requestResult.get("items").get("item").get("citycode")]
 
     elif requestResult.get("totalCount") != 0:
@@ -98,6 +99,7 @@ def coordinateCheckResult(requestResult, successCount, pointLati, pointLong):
             # newResultBusStop = requestResult.get("items").get("item")[0].get("nodenm")
             newResultBusStop = [requestResult.get("items").get("item")[0].get("nodenm"),
                                 requestResult.get("items").get("item")[0].get("nodeid"),
+                                requestResult.get("items").get("item")[0].get("nodeno"),
                                 requestResult.get("items").get("item")[0].get("citycode")]
     else:
         print("버스정류소 검색 body데이터 : 없음")
@@ -185,6 +187,7 @@ def getDestinationLoc(destination):
         "key": getEnv("V_WORLD_KEY"),
     }
     response = requests.get(apiurl, params=params)
+
     res = [-1, -1]
     if response.status_code == 200:
         adressData = response.json()
@@ -194,10 +197,11 @@ def getDestinationLoc(destination):
         # 중간에 배열 0은 첫번째 결과값을 꺼낸 것이므로 나중에 소비자가 선택가능하면 좋을 듯
         res[1] = float(adressData.get("response").get("result").get("items")[0].get("point").get("x"))
         res[0] = float(adressData.get("response").get("result").get("items")[0].get("point").get("y"))
+
     return res
 
 
-def getAllPathId(busStopName, busStopId, cityCode):
+def getAllPathId(busStopName, busStopId, nodeId,cityCode):
     """
     출발 버스 정류장을 지나는 모든 버스 노선 id를 반환 - 불필요할 할지도
 
@@ -221,8 +225,12 @@ def getAllPathId(busStopName, busStopId, cityCode):
 
     pathJson = response.json().get("response").get("body")
 
+    print("=================")
+    print("bus number :", response.json())
+    print("=================")
+
     if pathJson['totalCount'] == 1:
-        return [pathJson['items']['item']['routeid']]
+        return [(pathJson['items']['item']['routeid'])]
     elif pathJson['totalCount'] > 1:
         routeIds = []
         for item in pathJson['items']['item']:
@@ -237,9 +245,17 @@ def getAllViaBusStop(busRouteId, cityCode):
     params = {'serviceKey': getEnv("DATA_GO_KEY"), 'pageNo': '1', 'numOfRows': '10', '_type': 'json',
               'cityCode': cityCode,
               'routeId': busRouteId}
+    
+    res = requests.get(url, params=params)
 
-    response = requests.get(url, params=params).json()['response']['body']['items']['item']
+    print(res.json()['response'].keys())
+    totalCount =  res.json()['response']['body']['totalCount']
 
+    params['numOfRows'] = str(totalCount)
+    
+    res = requests.get(url, params=params)
+    response = res.json()['response']['body']['items']['item']
+    # print("response :", res.json())
     return response
 
 
@@ -254,7 +270,10 @@ def busArrivalTime(pathId, busStopId, cityCode):
         params["routeId"] = routeId
         print(params["routeId"])
         response = requests.get(url, params=params).json()
-        busTimeDic[routeId] = int(response["response"]["body"]["items"]["item"][0]["arrtime"])
+        print("bus response :", response)
+
+        if response['response']['body']['totalCount'] > 0:
+            busTimeDic[routeId] = int(response["response"]["body"]["items"]["item"][0]["arrtime"])
         print(busTimeDic)
     # 도착 순서대로 정렬하여 리스트에 담아 리턴
     sortedBus = list(dict(sorted(busTimeDic.items(), key=lambda x: x[1])).keys())
@@ -271,7 +290,8 @@ def shortestBusRoute(pathId, userStartId, userEndId, cityCode):
         startOrd, endOrd = 0, 0
         params["routeId"] = routeId
         response = requests.get(url, params=params).json()
-        pathList = response["response"]["items"]["item"]
+        # print("res :", response)
+        pathList = response["response"]['body']["items"]["item"]
         # 출발 정류장과 도착 정류장 사이 정류장 개수를 구하여 딕셔너리에 저장
         for routeList in pathList:
             if routeList["nodeid"].count(userStartId) == 1:
@@ -287,22 +307,37 @@ def shortestBusRoute(pathId, userStartId, userEndId, cityCode):
 def findBus(userLati, userLong, userDestination):
     # [busStopName, busStopID, cityCode]
     userStart = coordinateBusStopSearch(userLati, userLong)
-    print(userStart)
+    print("userStart :", userStart)
 
     destinationPointLati, destinationPointLong = getDestinationLoc(userDestination)
     userEnd = coordinateBusStopSearch(destinationPointLati, destinationPointLong)
-    print(userEnd)
+    
+    busDict = {
+        "경기대후문": "경기대수원캠퍼스후문",
+        "장안공원": "장안공원",
+        "수원역환승센터(12승강장)": "수원역환승센터"
+    }
+
+    userEnd[0] = busDict.get(userEnd[0], userEnd[0])
+    print("userEnd :", userEnd)
 
     userStartAllPathId = getAllPathId(*userStart)
+    print("start all path :", userStartAllPathId)
     userEndAllPathId = getAllPathId(*userEnd)
+    print("end all path :", userEndAllPathId)
 
+    endLati, endLong = 0, 0
     crossPathIds = set()
     for pathId in userStartAllPathId:
         viaBusStops = getAllViaBusStop(pathId, userStart[-1])
 
+        # print("viaBusStops :", viaBusStops)
         for busStop in viaBusStops:
             if busStop['nodenm'].find(userEnd[0]) != -1:
                 crossPathIds.add(pathId)
+                endLati = busStop['gpslati']
+                endLong = busStop['gpslong']
+
     for pathId in userEndAllPathId:
         viaBusStops = getAllViaBusStop(pathId, userEnd[-1])
 
@@ -310,10 +345,11 @@ def findBus(userLati, userLong, userDestination):
             if busStop['nodenm'].find(userStart[0]) != -1:
                 crossPathIds.add(pathId)
 
-    print(crossPathIds)
+    print("crossPath :", crossPathIds)
+    print("end-LL", endLong, endLati)
 
-
-    res1 = busArrivalTime(crossPathIds, userStart[1], userStart[-1])
+    # res1 = busArrivalTime(crossPathIds, userStart[1], userEnd[-1])
+    res1 = []
     res2 = shortestBusRoute(crossPathIds, userStart[1], userEnd[1], userStart[-1])
 
     if len(res1) == 0 and len(res2) == 0:
@@ -326,13 +362,42 @@ def findBus(userLati, userLong, userDestination):
         "city_code": userStart[-1],
         "fast_arrive": res1,
         "short_time": res2,
-        "start_bus_stop": [userStart[0], userStart[1]]
+        "start_bus_stop": [userStart[0], userStart[1]],
+        'endLati': endLati,
+        'endLong': endLong,
     }
 
 
 if __name__ == "__main__":
     # test cod
-    findBus(37.41909998804243, 126.93540006310809, "경기대 수원캠")
+    # userLati= userLong=
+    # userLati, userLong = 37.34849196408942, 126.98445190777875
+    # findBus(37.34849196408942, 126.98445190777875, "수원역환승센터")
+    # 정문 : 
+    print("find bus :", findBus(37.3017, 127.0342167, "수원역환승센터"))
+    # userDestination = "수원역환승센터"
+    # destinationPointLati, destinationPointLong = getDestinationLoc(userDestination)
+    # userEnd = coordinateBusStopSearch(destinationPointLati, destinationPointLong)
+    
+    # print("userEnd :", userEnd)
+
+    # busDict = {
+    #     "경기대후문": "경기대수원캠퍼스후문",
+    #     "장안공원": "장안공원",
+    #     "수원역환승센터(12승강장)": "수원역환승센터"
+    # }
+
+    
+    # url = 'http://apis.data.go.kr/1613000/BusSttnInfoInqireService/getSttnNoList'
+    # params ={'serviceKey' : getEnv("DATA_GO_KEY"), 'pageNo' : '1', 'numOfRows' : '10', '_type' : 'json', 'cityCode' : userEnd[-1], 'nodeNo' : userEnd[2]}
+
+    # print("params :", params)
+
+    # response = requests.get(url, params=params)
+    # print(response.json())
+    
+
+    # 7001, 3007
     pass
 
     # === supabase test start ===
